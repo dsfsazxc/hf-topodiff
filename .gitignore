@@ -1,7 +1,4 @@
-*
-!.gitignore
-!scripts/
-scripts/*
-!scripts/hf/
-scripts/hf/*
-!scripts/hf/Topo_feedback_data_collector.py
+/human-feedback/logs/
+/human-feedback/path/
+/topodiff-reward/generated/
+/topodiff-reward/data/
