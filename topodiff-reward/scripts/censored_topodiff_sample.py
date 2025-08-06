@@ -25,14 +25,29 @@ from topodiff.script_util import (
 )
 
 
-def setup_reward_model(args):
-    """Setup reward model (time-dependent or time-independent)"""
+def setup_bc_reward_model(args):
+    """Setup BC reward model (8 channels, pool=spatial)"""
     kwargs = args_to_dict(args, classifier_defaults().keys())
-    model = create_classifier(in_channels=args.reward_in_channels, **kwargs)
+    kwargs['classifier_pool'] = "spatial"
+    kwargs['classifier_depth'] = 4
+    kwargs['classifier_attention_resolutions'] = "32,16,8"
+    
+    model = create_classifier(in_channels=8, **kwargs)
+
+    model.out[4] = th.nn.Linear(model.out[4].in_features, 1)
+    return model
+
+def setup_fm_reward_model(args):
+    """Setup FM reward model (1 channel, pool=attention)"""
+    kwargs = args_to_dict(args, classifier_defaults().keys())
+    kwargs['classifier_pool'] = "attention"
+    kwargs['classifier_depth'] = 2
+    
+    model = create_classifier(in_channels=1, **kwargs)
+
     in_ch = model.out[2].c_proj.in_channels
     model.out[2].c_proj = th.nn.Conv1d(in_ch, 1, kernel_size=1)
     return model
-
 
 def main():
     args = create_argparser().parse_args()
@@ -94,7 +109,7 @@ def main():
         logger.log(f"Loading {len(args.fm_reward_paths)} FM reward models...")
         for i, fm_reward_path in enumerate(args.fm_reward_paths):
             logger.log(f"Loading FM reward model {i+1}: {fm_reward_path}")
-            fm_reward = setup_reward_model(args)
+            fm_reward = setup_fm_reward_model(args)
             fm_reward.load_state_dict(dist_util.load_state_dict(fm_reward_path, map_location="cpu"))
             fm_reward.to(dist_util.dev())
             if args.reward_use_fp16:
@@ -110,14 +125,10 @@ def main():
         for i, bc_reward_path in enumerate(args.bc_reward_paths):
             logger.log(f"Loading BC reward model {i+1}: {bc_reward_path}")
             try:
-                bc_reward = create_regressor(
-                    regressor_depth=args.regressor_depth, 
-                    in_channels=args.regressor_channels, 
-                    **args_to_dict(args, regressor_defaults().keys())
-                )
+                bc_reward = setup_bc_reward_model(args)
                 bc_reward.load_state_dict(dist_util.load_state_dict(bc_reward_path, map_location="cpu"))
                 bc_reward.to(dist_util.dev())
-                if args.regressor_use_fp16:
+                if args.reward_use_fp16: 
                     bc_reward.convert_to_fp16()
                 bc_reward.eval()
                 bc_reward_list.append(bc_reward)
